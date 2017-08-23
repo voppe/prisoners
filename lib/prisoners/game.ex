@@ -14,7 +14,7 @@ defmodule Prisoners.Game do
     end
 
     require Logger
-     
+
     @decisions ["cooperate", "betray"]
     @votes ["extend", "end"]
     @duration 60000
@@ -125,28 +125,27 @@ defmodule Prisoners.Game do
     def say(game_id, from_player_id, message) do
         Logger.info "#{game_id}: #{from_player_id} says '#{message}'"
 
-        player = get_players(game_id)[from_player_id].socket
-
         message_data = parse_message(game_id, from_player_id, message)
         
-        Phoenix.Channel.broadcast! player, "update:message", message_data
+        Phoenix.Channel.broadcast! get_players(game_id)[from_player_id].socket, "update:message", message_data
 
         :ok
     end
 
+    def say(_, nil, _, _) do :err end
     def say(_, _, "", _) do :err end
     def say(_, _, _, nil) do :err end
-    def say(_, from_player_id, _, opponent_id) when from_player_id == opponent_id do :err end
-    def say(game_id, from_player_id, message, opponent_id) do
+    def say(_, from_player_id, _, to_player_id) when from_player_id == to_player_id do :err end
+    def say(game_id, from_player_id, message, to_player_id) do
         players = get_players(game_id)
 
-        if players |> Map.has_key?(opponent_id) do
-            Logger.info "#{game_id}: #{from_player_id} says '#{message}' to #{opponent_id}"
+        if players |> Map.has_key?(to_player_id) do
+            Logger.info "#{game_id}: #{from_player_id} says '#{message}' to #{to_player_id}"
 
-            message_data = parse_message(game_id, from_player_id, message, opponent_id)
+            message_data = parse_message(game_id, from_player_id, message, to_player_id)
 
-            for socket_id <- [opponent_id, from_player_id] do
-                Phoenix.Channel.push players[socket_id].socket, "update:message", message_data
+            for player_id <- [from_player_id, to_player_id] do
+                Phoenix.Channel.push players[player_id].socket, "update:message", message_data
             end
 
             :ok
@@ -194,16 +193,16 @@ defmodule Prisoners.Game do
         player = get_player(game_id, player_id)
         
         %PlayerInfo{
-          id: player_id,
-          time: get_time(game_id),
-          votes: player.votes,
-          players: get_opponents(game_id, player_id) |> Enum.reduce(%{}, fn opponent_id, acc -> 
-              put_in(acc[opponent_id], %{
-                  id: opponent_id,
-                  decision: player.decisions[opponent_id]
-              })
-          end),
-          messages: get_messages(game_id, player_id)
+            id: player_id,
+            time: get_time(game_id),
+            votes: player.votes,
+            players: get_opponents(game_id, player_id) |> Enum.reduce(%{}, fn opponent_id, acc -> 
+                put_in(acc[opponent_id], %{
+                    id: opponent_id,
+                    decision: player.decisions[opponent_id]
+                })
+            end),
+            messages: get_messages(game_id, player_id)
         }
     end
 
@@ -233,8 +232,8 @@ defmodule Prisoners.Game do
         {start, duration} = String.to_atom(game_id) |> Agent.get(&({&1.start, &1.duration}))
         
         %{
-              current: :os.system_time(:milli_seconds) - start,
-              duration: duration
+            current: :os.system_time(:milli_seconds) - start,
+            duration: duration
         }
     end
 
@@ -249,10 +248,14 @@ defmodule Prisoners.Game do
     # Helper methods
     ##
 
-    defp calculate_points(:cooperate, :cooperate), do: 15
-    defp calculate_points(:cooperate, :betray), do: -15
-    defp calculate_points(:betray, :cooperate), do: 15
-    defp calculate_points(:betray, :betray), do: 0
+    defp calculate_points(a, b) do
+        case {a, b} do
+            {:cooperate, :cooperate} -> 15
+            {:cooperate, :betray} -> -15
+            {:betray, :cooperate} -> 15
+            {:betray, :betray} -> 0
+        end
+    end
 
     defp filter_message(%Message{from: from, to: to}, player_id) do
         from == player_id || to == player_id || to == nil
@@ -276,16 +279,20 @@ defmodule Prisoners.Game do
     end
 
     defp result(game_id) do
+        Logger.info "#{game_id}: Calculating result"
+
         players = get_players(game_id)
-        
-        case players
+
+        decisions = players
         |> Map.values
         |> Enum.reduce([], fn %{decisions: decisions}, acc ->
             decisions
             |> Map.values
             |> Enum.concat(acc)
         end)
-        |> Enum.dedup do
+        |> Enum.dedup
+        
+        result = case decisions do
             [:cooperate] -> give_everyone(players, 60)
             [:betray] -> give_everyone(players, -60)
             _ -> players
@@ -301,6 +308,8 @@ defmodule Prisoners.Game do
                 Map.put(acc, player_id, result)
             end)
         end
+        
+        result
     end
 
     ##
@@ -315,11 +324,7 @@ defmodule Prisoners.Game do
             put_in game.start, game.start + duration
         end)
 
-        get_players(game_id)
-        |> Map.values
-        |> List.first
-        |> Map.get(:socket)
-        |> Phoenix.Channel.broadcast("update:extend", get_time(game_id))
+        broadcast(game_id, "update:extend", get_time(game_id))
 
         loop(game_id, duration)
     end
@@ -328,5 +333,13 @@ defmodule Prisoners.Game do
         players
         |> Map.keys
         |> Map.new(&({&1, points})) 
+    end
+
+    defp broadcast(game_id, message, payload) do
+        get_players(game_id)
+        |> Map.values
+        |> List.first
+        |> Map.get(:socket)
+        |> Phoenix.Channel.push(message, payload)
     end
 end

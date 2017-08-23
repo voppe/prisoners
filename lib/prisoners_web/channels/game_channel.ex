@@ -14,6 +14,7 @@ defmodule PrisonersWeb.GameChannel do
         {:error, %{reason: "unauthorized"}}
     end
   end
+  def join(_, _ , _), do: {:error, "Invalid join request"}
 
   def handle_info(:after_join, player) do
     player_id = player.assigns[:player_id]
@@ -22,6 +23,10 @@ defmodule PrisonersWeb.GameChannel do
     
     broadcast! player, "update:status", %{player: player_id, status: :status_joined}
 
+    {:noreply, player}
+  end
+  
+  def handle_info(_, player) do
     {:noreply, player}
   end
   

@@ -27,18 +27,6 @@ defmodule Prisoners.Queue do
             {result, state}
         end)
 
-        for group <- groups do
-            game_id = UUID.uuid4()
-
-            {_, _} = Prisoners.Game.start("game:" <> game_id, Map.keys(group))
-            
-            Logger.info("Game #{game_id} started with players #{Map.keys(group)}")
-            
-            for {_, player} <- group do
-                Phoenix.Channel.push(player, "search:found", %{game_id: game_id, token: player.assigns[:player_id]})
-            end
-        end
-
         groups
     end
 
@@ -52,7 +40,7 @@ defmodule Prisoners.Queue do
     def leave(player) do
         __MODULE__
         |> Agent.update(fn players ->
-             Map.delete(players, player.assigns[:player_id])
+            Map.delete(players, player.assigns[:player_id])
         end)
     end
 end
