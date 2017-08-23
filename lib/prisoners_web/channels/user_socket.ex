@@ -2,7 +2,8 @@ defmodule PrisonersWeb.UserSocket do
   use Phoenix.Socket
 
   ## Channels
-  # channel "room:*", PrisonersWeb.RoomChannel
+  channel "queue", PrisonersWeb.QueueChannel
+  channel "game:*", PrisonersWeb.GameChannel
 
   ## Transports
   transport :websocket, Phoenix.Transports.WebSocket

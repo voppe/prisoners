@@ -13,7 +13,7 @@ defmodule Prisoners.Application do
       # Start the endpoint when the application starts
       supervisor(PrisonersWeb.Endpoint, []),
       # Start your own worker by calling: Prisoners.Worker.start_link(arg1, arg2, arg3)
-      # worker(Prisoners.Worker, [arg1, arg2, arg3]),
+      worker(Prisoners.Queue, []),
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
