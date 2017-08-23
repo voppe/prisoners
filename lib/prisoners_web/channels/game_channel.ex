@@ -30,20 +30,20 @@ defmodule PrisonersWeb.GameChannel do
     {:noreply, player}
   end
   
-  def handle_in("action:message", %{"text" => message}, player) when message != "" do
-    game_id = player.topic
-    player_id = player.assigns[:player_id]
-    
-    res = Prisoners.Game.say(game_id, player_id, message)
-
-    {:reply, res, player}
-  end
-
   def handle_in("action:message", %{"text" => message, "to" => opponent_id}, player) when message != "" do
     game_id = player.topic
     player_id = player.assigns[:player_id]
 
     res = Prisoners.Game.say(game_id, player_id, message, opponent_id)
+
+    {:reply, res, player}
+  end
+  
+  def handle_in("action:message", %{"text" => message}, player) when message != "" do
+    game_id = player.topic
+    player_id = player.assigns[:player_id]
+    
+    res = Prisoners.Game.say(game_id, player_id, message)
 
     {:reply, res, player}
   end
