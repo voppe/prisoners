@@ -14,18 +14,19 @@ defmodule Prisoners.Game do
     end
 
     require Logger
+    alias Prisoners.Game
 
     @decisions ["cooperate", "betray"]
     @votes ["extend", "end"]
     @duration 60000
     
-    def run(game_id, player_ids, duration \\ @duration) do
+    def run("" <> game_id, player_ids, duration \\ @duration) when is_list(player_ids) and is_integer(duration) do
         Logger.info "#{game_id}: Started with #{player_ids}"
 
         pid = self()
         
         {:ok, ref} = Agent.start_link(fn -> 
-            %Prisoners.Game{
+            %Game{
                 id: game_id,
                 pid: pid,
                 duration: duration,
@@ -49,7 +50,7 @@ defmodule Prisoners.Game do
         Logger.info "#{game_id}: Ended"
     end
 
-    defp loop(game_id, duration) do
+    defp loop("" <> game_id, duration) when is_integer(duration) do
         receive do
             :game_extend -> extend(game_id)
         after
@@ -57,11 +58,11 @@ defmodule Prisoners.Game do
         end
     end
 
-    def start(game_id, player_ids) do
+    def start("" <> game_id, player_ids) when is_list(player_ids) do
         spawn_monitor(Prisoners.Game, :run, [game_id, player_ids])
     end
 
-    def stop(game_id) do
+    def stop("" <> game_id) do
         Logger.info "#{game_id}: Stopped"
 
         get_game(game_id)
@@ -77,7 +78,7 @@ defmodule Prisoners.Game do
     # Player join/leave
     ##
 
-    def join(game_id, player_id, socket) do
+    def join("" <> game_id, "" <> player_id, socket) do
         Logger.info "#{game_id}: #{player_id} joined the game"
 
         String.to_atom(game_id)
@@ -88,7 +89,7 @@ defmodule Prisoners.Game do
         :ok
     end
 
-    def leave(game_id, player_id) do
+    def leave("" <> game_id, "" <> player_id) do
         Logger.info "#{game_id}: #{player_id} left the game"
 
         String.to_atom(game_id)
@@ -103,7 +104,7 @@ defmodule Prisoners.Game do
     # Player input
     ##
 
-    def decide(game_id, player_id, decision, opponent_id) when decision in @decisions do
+    def decide("" <> game_id, "" <> player_id, decision, "" <> opponent_id) when decision in @decisions do
         Logger.info "#{game_id}: #{player_id} decided to #{decision} with #{opponent_id}"
         
         String.to_atom(game_id)
@@ -120,7 +121,7 @@ defmodule Prisoners.Game do
     def decide(_, _, _, _), do: :err
 
     def say(_, _, "") do :err end
-    def say(game_id, from_player_id, message) do
+    def say("" <> game_id, "" <> from_player_id, "" <> message) do
         Logger.info "#{game_id}: #{from_player_id} says '#{message}'"
         
         get_game(game_id)
@@ -132,8 +133,8 @@ defmodule Prisoners.Game do
     def say(_, nil, _, _) do :err end
     def say(_, _, "", _) do :err end
     def say(_, _, _, nil) do :err end
-    def say(_, from_player_id, _, to_player_id) when from_player_id == to_player_id do :err end
-    def say(game_id, from_player_id, message, to_player_id) do
+    def say(_, "" <> from_player_id, _, "" <> to_player_id) when from_player_id == to_player_id do :err end
+    def say("" <> game_id, "" <> from_player_id, "" <> message, "" <> to_player_id) do
         players = get_game(game_id).players
 
         if players |> Map.has_key?(to_player_id) do
@@ -151,7 +152,7 @@ defmodule Prisoners.Game do
         end
     end
     
-    def vote(game_id, from_player_id, vote_for, flag) when is_boolean(flag) and vote_for in @votes do
+    def vote("" <> game_id, "" <> from_player_id, "" <> vote_for, flag) when is_boolean(flag) and vote_for in @votes do
         Logger.info "#{game_id}: #{from_player_id} #{flag && "voted to #{vote_for}" || "canceled his #{vote_for} vote"}"
         
         {vote_approved, pid} = String.to_atom(game_id)
@@ -187,7 +188,7 @@ defmodule Prisoners.Game do
     # Getter methods
     ## 
 
-    def get_info(game_id, player_id) do
+    def get_info("" <> game_id, "" <> player_id) do
         Logger.debug "#{game_id}: Getting information for #{player_id}"
 
         player = get_player(game_id, player_id)
@@ -206,27 +207,27 @@ defmodule Prisoners.Game do
         }
     end
 
-    def get_game(game_id) do
+    def get_game("" <> game_id) do
         String.to_atom(game_id)
         |> Agent.get(&(&1))
     end
 
-    def get_player(game_id, player_id) do
+    def get_player("" <> game_id, "" <> player_id) do
         get_game(game_id).players[player_id]
     end
 
-    def get_opponents(players, player_id) when is_list(players) do players |> Enum.filter(&(&1 != player_id)) end
-    def get_opponents(players, player_id) when is_map(players) do players |> Map.keys |> get_opponents(player_id) end
-    def get_opponents(game_id, player_id) when is_bitstring(game_id) do get_game(game_id).players |> get_opponents(player_id) end
+    def get_opponents(players, "" <> player_id) when is_list(players) do players |> Enum.filter(&(&1 != player_id)) end
+    def get_opponents(players, "" <> player_id) when is_map(players) do players |> Map.keys |> get_opponents(player_id) end
+    def get_opponents("" <> game_id, "" <> player_id) do get_game(game_id).players |> get_opponents(player_id) end
 
-    def get_messages(game_id, player_id) do
+    def get_messages("" <> game_id, "" <> player_id) do
         Logger.debug "#{game_id}: Getting #{player_id} messages"
 
         String.to_atom(game_id)
         |> Agent.get(fn %{messages: messages} -> Enum.filter(messages, &filter_message(&1, player_id)) end)
     end
 
-    def get_time(game_id) do
+    def get_time("" <> game_id) do
         {start, duration} = String.to_atom(game_id) |> Agent.get(&({&1.start, &1.duration}))
         
         %{
@@ -235,7 +236,7 @@ defmodule Prisoners.Game do
         }
     end
 
-    def can_join?(game_id, player_id) do
+    def can_join?("" <> game_id, "" <> player_id) do
         Logger.info "#{game_id}: Checking if #{player_id} can join"
 
         String.to_atom(game_id)
@@ -246,7 +247,7 @@ defmodule Prisoners.Game do
     # Helper methods
     ##
 
-    defp calculate_points(a, b) do
+    defp calculate_points(a, b) when a in @decisions and b in @decisions do
         case {a, b} do
             {:cooperate, :cooperate} -> 15
             {:cooperate, :betray} -> -15
@@ -255,11 +256,11 @@ defmodule Prisoners.Game do
         end
     end
 
-    defp filter_message(%Message{from: from, to: to}, player_id) do
+    defp filter_message(%Message{from: from, to: to}, "" <> player_id) do
         from == player_id || to == player_id || to == nil
     end
 
-    defp parse_message(game_id, player_id, message, opponent_id \\ nil) do
+    defp parse_message("" <> game_id, "" <> player_id, "" <> message, opponent_id \\ nil) do
         Logger.info "#{game_id}: Parsing message from #{player_id} to #{opponent_id || "everyone"}"
 
         message_data = %Message{
@@ -276,7 +277,7 @@ defmodule Prisoners.Game do
         message_data
     end
 
-    defp result(game_id) do
+    defp result("" <> game_id) do
         Logger.info "#{game_id}: Calculating result"
 
         game = get_game(game_id)
@@ -314,7 +315,7 @@ defmodule Prisoners.Game do
     # Actions
     ##
 
-    defp extend(game_id, duration \\ @duration) do
+    defp extend("" <> game_id, duration \\ @duration) when is_integer(duration) do
         Logger.info "#{game_id}: Timer extended"
 
         String.to_atom(game_id)
@@ -328,13 +329,13 @@ defmodule Prisoners.Game do
         loop(game_id, duration)
     end
 
-    defp give_everyone(game, points) do
+    defp give_everyone(game = %Game{}, points) when is_integer(points) do
         game.players
         |> Map.keys
         |> Map.new(&({&1, points})) 
     end
 
-    defp broadcast(game, "" <> message, payload) do
+    defp broadcast(game = %Game{}, "" <> message, payload) do
         Logger.info "#{game.id}: Broadcasting #{message} => #{inspect(payload)}"
 
         game.players
@@ -344,7 +345,7 @@ defmodule Prisoners.Game do
         |> Phoenix.Channel.broadcast(message, payload)
     end
 
-    defp vote_reset(game, vote) do
+    defp vote_reset(game = %Game{}, vote) do
         Logger.info "#{game.id}: Resetting vote #{vote}"
 
         players = for { player_id, player } <- game.players, into: %{} do
