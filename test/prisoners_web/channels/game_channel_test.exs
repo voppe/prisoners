@@ -120,4 +120,12 @@ defmodule PrisonersWeb.GameChannelTest do
     push player, "action:vote", %{"vote" => "extend", "flag" => false}
     assert_broadcast "update:vote", %{"vote" => "extend", "count" => 0 }
   end
+
+  test "on vote approval, receive vote reset", %{sockets: sockets} do
+    for socket <- sockets do
+      push socket, "action:vote", %{"vote" => "extend", "flag" => true}
+    end
+    
+    assert_broadcast "update:vote", %{"vote" => "extend", "count" => 0 }
+  end
 end

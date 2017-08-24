@@ -171,9 +171,10 @@ defmodule Prisoners.Game do
         game = String.to_atom(game_id)
         |> Agent.get(&(&1))
         
-        broadcast(game, "update:vote", %{"vote" => vote_for, "count" => Enum.count(game.players, fn {_, player} ->
+        count = Enum.count(game.players, fn {_, player} ->
             player.votes[vote_for]
-        end)})
+        end)
+        broadcast(game, "update:vote", %{"vote" => vote_for, "count" => count})
 
         if vote_approved do
             Logger.info "#{game_id}: Vote for game #{vote_for} was approved"
@@ -346,10 +347,10 @@ defmodule Prisoners.Game do
     defp vote_reset(game, vote) do
         Logger.info "#{game.id}: Resetting vote #{vote}"
 
-        for {player_id, player} <- game.players, into: %{} do
-            {player_id, put_in(player.votes[vote], false)}
+        players = for { player_id, player } <- game.players, into: %{} do
+            { player_id, put_in(player.votes[vote], false) }
         end
-        
-        %{ game | players: game.players }
+
+        %{ game | players: players }
     end
 end
