@@ -112,4 +112,12 @@ defmodule PrisonersWeb.GameChannelTest do
     assert reply.players[opponent_id].decision == :betray 
     assert %Prisoners.Game.Message{text: "waddup", from: ^opponent_id, to: nil} = reply.messages |> List.first
   end
+
+  test "on vote, receive vote count", %{sockets: [player, _, _]} do
+    push player, "action:vote", %{"vote" => "extend", "flag" => true}
+    assert_broadcast "update:vote", %{"vote" => "extend", "count" => 1 }
+
+    push player, "action:vote", %{"vote" => "extend", "flag" => false}
+    assert_broadcast "update:vote", %{"vote" => "extend", "count" => 0 }
+  end
 end

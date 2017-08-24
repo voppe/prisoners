@@ -4,8 +4,8 @@
             {{(Math.max(0, this.time.duration - this.time.current)/1000).toFixed(1)}}
 
             <button v-on:click="vote('extend', !extend)">
-                <span v-if="!extend">Vote extend</span>
-                <span v-else>Cancel extend</span>
+                <span v-if="!extend">Vote extend <VoteCount :max="3" :count="votes['extend']"/></span>
+                <span v-else>Cancel extend <VoteCount :max="3" :count="votes['extend']"/></span>
             </button>
         </div>
         <ul>
@@ -48,12 +48,19 @@
     import socket from '../socket'
     import router from '../router'
 
+    import VoteCount from './VoteCount.vue'
+
     export default {
+        components: {
+            VoteCount
+        },
         name: "game",
         mounted() {
             this.gameid = this.$route.params.id
 
             let token = sessionStorage.getItem(this.gameid)
+
+            console.log("Joining game", this.gameid, "with token", token.substr(0, 9)+"*");
 
             this.channel = socket.channel(`game:${this.gameid}`, { token })
 
@@ -94,6 +101,12 @@
                 })
 
             this.channel
+                .on("update:vote", message => {
+                    console.log("Received vote", message)
+                    this.votes[message.vote] = message.count;
+                })
+
+            this.channel
                 .on("update:extend", time => {
                     console.log("Received extend", time)
                     this.extend = false
@@ -118,6 +131,9 @@
                 time: {
                     current: 0,
                     finish: 0
+                },
+                votes: {
+                    extend: 0
                 }
             }
         },
@@ -137,6 +153,8 @@
                 this.message.text = ""
             },
             vote: function (vote, flag) {
+                console.log("Voting for ", vote, ":", flag)
+
                 this[vote] = !this[vote] === true
                 this.channel.push("action:vote", {
                     vote,
