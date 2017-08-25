@@ -130,22 +130,18 @@ defmodule Prisoners.Game do
     def say("" <> game_id, "" <> from_player_id, "" <> message) do
         Logger.info fn -> "#{game_id}: #{from_player_id} says '#{message}'" end
 
-        get_game(game_id)
+        game_id
+        |> get_game
         |> broadcast("update:message", parse_message(game_id, from_player_id, message))
 
         :ok
     end
 
-    def say(_, nil, _, _) do :err end
-    def say(_, _, "", _) do :err end
-    def say(_, _, _, nil) do :err end
-    def say(_, "" <> from_player_id, _, "" <> to_player_id) when from_player_id == to_player_id do :err end
-    def say("" <> game_id, "" <> from_player_id, "" <> message, "" <> to_player_id) do
-        players = get_game(game_id).players
-
-        if players |> Map.has_key?(to_player_id) do
+    def say("" <> game_id, "" <> from_player_id, "" <> message, "" <> to_player_id) when message != "" do
+        if has_player?(game_id, from_player_id) and has_player?(game_id, to_player_id) do
             Logger.info fn -> "#{game_id}: #{from_player_id} says '#{message}' to #{to_player_id}" end
 
+            players = get_game(game_id).players
             message_data = parse_message(game_id, from_player_id, message, to_player_id)
 
             for player_id <- [from_player_id, to_player_id] do
@@ -157,6 +153,7 @@ defmodule Prisoners.Game do
             :err
         end
     end
+    def say(_, _, _, _) do :err end
 
     def vote("" <> game_id, "" <> from_player_id, "" <> vote_for, flag) when is_boolean(flag) and vote_for in @votes do
         Logger.info fn -> "#{game_id}: #{from_player_id} #{flag && "voted to #{vote_for}" || "canceled his #{vote_for} vote"}" end
@@ -220,9 +217,8 @@ defmodule Prisoners.Game do
         |> Agent.get(&(&1))
     end
 
-    def get_player("" <> game_id, "" <> player_id) do
-        get_game(game_id).players[player_id]
-    end
+    def has_player?("" <> game_id, "" <> player_id), do: get_player(game_id, player_id) != nil
+    def get_player("" <> game_id, "" <> player_id), do: get_game(game_id).players[player_id]
 
     def get_opponents(players, "" <> player_id) when is_list(players) do players |> Enum.filter(&(&1 != player_id)) end
     def get_opponents(players, "" <> player_id) when is_map(players) do players |> Map.keys |> get_opponents(player_id) end
