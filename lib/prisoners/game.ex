@@ -94,7 +94,6 @@ defmodule Prisoners.Game do
     ##
     # Player input
     ##
-
     def decide("" <> game_id, "" <> player_id, decision, "" <> opponent_id) when decision in @decisions do
         Logger.info fn -> "#{game_id}: #{player_id} decided to #{decision} with #{opponent_id}" end
 
@@ -108,8 +107,7 @@ defmodule Prisoners.Game do
     end
     def decide(_, _, _, _), do: :err
 
-    def say(_, _, "") do :err end
-    def say("" <> game_id, "" <> from_player_id, "" <> message) do
+    def say("" <> game_id, "" <> from_player_id, "" <> message) when message != "" do
         Logger.info fn -> "#{game_id}: #{from_player_id} says '#{message}'" end
 
         message_data = parse_message(game_id, from_player_id, message)
@@ -119,6 +117,7 @@ defmodule Prisoners.Game do
 
         :ok
     end
+    def say(_, _, _) do :err end
 
     def say("" <> game_id, "" <> from_player_id, "" <> message, "" <> to_player_id) when message != "" do
         if has_player?(game_id, from_player_id) and has_player?(game_id, to_player_id) do
@@ -148,12 +147,12 @@ defmodule Prisoners.Game do
 
             vote_approved = game.player_ids |> Player.get |> Enum.all?(fn player -> player.votes[vote_for] end)
 
-            if vote_approved do
-                vote_reset(game, vote_for)
-            end
-
             {vote_approved, game.pid}
         end)
+        
+        if vote_approved do
+            vote_reset(game_id, vote_for)
+        end
 
         game = get(game_id)
 
@@ -277,8 +276,8 @@ defmodule Prisoners.Game do
         |> Enum.dedup
 
         result = case decisions do
-            ["cooperate"] -> give_everyone(game, 60)
-            ["betray"] -> give_everyone(game, -60)
+            ["cooperate"] -> give_everyone(game_id, 60)
+            ["betray"] -> give_everyone(game_id, -60)
             _ -> game.player_ids
             |> Enum.reduce(%{}, fn player_id, acc ->
                 res = Player.get(player_id).decisions
@@ -313,8 +312,8 @@ defmodule Prisoners.Game do
         loop(game_id, duration)
     end
 
-    defp give_everyone(game = %Game{}, points) when is_integer(points) do
-        game.player_ids
+    defp give_everyone("" <> game_id, points) when is_integer(points) do
+        get(game_id).player_ids
         |> Map.new(&({&1, points}))
     end
 
@@ -328,10 +327,10 @@ defmodule Prisoners.Game do
         |> Channel.broadcast(channel, message)
     end
 
-    defp vote_reset(game = %Game{}, "" <> vote_for) do
-        Logger.info fn -> "#{game.id}: Resetting vote #{vote_for}" end
+    defp vote_reset("" <> game_id, "" <> vote_for) do
+        Logger.info fn -> "#{game_id}: Resetting vote #{vote_for}" end
 
-        game.player_ids
+        get(game_id).player_ids
         |> Enum.each(&(Player.vote(&1, vote_for, false)))
     end
 end
