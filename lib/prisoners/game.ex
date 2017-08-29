@@ -21,8 +21,6 @@ defmodule Prisoners.Game do
 
     def run("" <> game_id, player_ids, duration \\ @duration) when is_list(player_ids) and is_integer(duration) do
         Logger.info fn -> "#{game_id}: Starting game with #{player_ids}" end
-
-        game_name = String.to_atom(game_id)
         
         {:ok, ref} = Agent.start_link(fn ->
             for player_id <- player_ids do
@@ -37,7 +35,7 @@ defmodule Prisoners.Game do
                 player_ids: player_ids,
                 messages: []
             }
-        end, name: game_name)
+        end, name: String.to_atom(game_id))
 
         Logger.info fn -> "#{game_id}: Started game with #{player_ids}" end
         Logger.debug fn -> "#{game_id}: Started process #{inspect(ref)}" end
@@ -65,7 +63,7 @@ defmodule Prisoners.Game do
         broadcast(game_id, "update:result", %{result: result(game_id)})
 
         game_id
-        |> String.to_atom
+        |> String.to_existing_atom
         |> Agent.stop
 
         :ok
@@ -140,9 +138,7 @@ defmodule Prisoners.Game do
     def vote("" <> game_id, "" <> player_id, "" <> vote_for, flag) when is_boolean(flag) and vote_for in @votes do
         Logger.info fn -> "#{game_id}: #{player_id} #{flag && "voted to #{vote_for}" || "canceled his #{vote_for} vote"}" end
 
-        {vote_approved, pid} = game_id
-        |> String.to_atom
-        |> Agent.get(fn game ->
+        {vote_approved, pid} = get(game_id, fn game ->
             Player.vote(player_id, vote_for, flag)
 
             vote_approved = game.player_ids |> Player.get |> Enum.all?(fn player -> player.votes[vote_for] end)
@@ -165,7 +161,7 @@ defmodule Prisoners.Game do
         if vote_approved do
             Logger.info fn -> "#{game_id}: Vote for game #{vote_for} was approved" end
 
-            send(pid, String.to_atom("game_" <> vote_for))
+            send(pid, String.to_existing_atom(vote_for))
         end
     end
 
@@ -196,7 +192,7 @@ defmodule Prisoners.Game do
     def get("" <> game_id), do: get(game_id, &(&1))
     def get("" <> game_id, foo) do
         game_id
-        |> String.to_atom
+        |> String.to_existing_atom
         |> Agent.get(foo)
     end
 
@@ -205,14 +201,11 @@ defmodule Prisoners.Game do
     def get_messages("" <> game_id, "" <> player_id) do
         Logger.debug fn -> "#{game_id}: Getting #{player_id} messages" end
 
-        game_id
-        |> String.to_atom
-        |> Agent.get(fn %{messages: messages} -> Enum.filter(messages, &filter_message(&1, player_id)) end)
+        get(game_id, fn %{messages: messages} -> Enum.filter(messages, &filter_message(&1, player_id)) end)
     end
 
     def get_time("" <> game_id) do
-        {start, duration} = game_id
-        |> String.to_atom |> Agent.get(&({&1.start, &1.duration}))
+        {start, duration} = get(game_id, &({&1.start, &1.duration}))
 
         %{
             current: :os.system_time(:milli_seconds) - start,
