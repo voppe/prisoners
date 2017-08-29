@@ -1,9 +1,5 @@
 defmodule Prisoners.Game do
-    defstruct id: nil, pid: nil, players: %{}, messages: [], start: nil, duration: nil
-
-    defmodule Player do
-        defstruct id: nil, decisions: %{}, socket: nil, votes: %{}
-    end
+    defstruct id: nil, pid: nil, player_ids: [], messages: [], start: nil, duration: nil
 
     defmodule PlayerInfo do
         defstruct id: nil, votes: %{}, time: nil, players: %{}, messages: []
@@ -14,41 +10,41 @@ defmodule Prisoners.Game do
     end
 
     require Logger
+    require IEx
     alias Prisoners.Game
+    alias Prisoners.Player
+    alias Phoenix.Channel
 
     @decisions ["cooperate", "betray"]
     @votes ["extend", "end"]
     @duration 60_000
 
     def run("" <> game_id, player_ids, duration \\ @duration) when is_list(player_ids) and is_integer(duration) do
-        Logger.info fn -> "#{game_id}: Started with #{player_ids}" end
+        Logger.info fn -> "#{game_id}: Starting game with #{player_ids}" end
 
-        pid = self()
-
+        game_name = String.to_atom(game_id)
+        
         {:ok, ref} = Agent.start_link(fn ->
+            for player_id <- player_ids do
+                Player.create(player_id, List.delete(player_ids, player_id))
+            end
+            
             %Game{
                 id: game_id,
-                pid: pid,
+                pid: self(),
                 duration: duration,
                 start: :os.system_time(:milli_seconds),
-                players: player_ids
-                    |> Enum.reduce(%{}, fn player_id, acc ->
-                        decisions = player_ids
-                        |> get_opponents(player_id)
-                        |> Map.new(&({&1, :cooperate}))
-
-                        Map.put(acc, player_id, %Player{id: player_id, decisions: decisions})
-                    end),
+                player_ids: player_ids,
                 messages: []
             }
-        end, name: game_id
-        |> String.to_atom)
+        end, name: game_name)
 
+        Logger.info fn -> "#{game_id}: Started game with #{player_ids}" end
         Logger.debug fn -> "#{game_id}: Started process #{inspect(ref)}" end
 
         loop(game_id, duration)
 
-        Logger.info fn -> "#{game_id}: Ended" end
+        Logger.info fn -> "#{game_id}: Ended game" end
     end
 
     defp loop("" <> game_id, duration) when is_integer(duration) do
@@ -66,9 +62,7 @@ defmodule Prisoners.Game do
     def stop("" <> game_id) do
         Logger.info fn -> "#{game_id}: Stopped" end
 
-        game_id
-        |> get_game
-        |> broadcast("update:result", %{result: result(game_id)})
+        broadcast(game_id, "update:result", %{result: result(game_id)})
 
         game_id
         |> String.to_atom
@@ -84,11 +78,7 @@ defmodule Prisoners.Game do
     def join("" <> game_id, "" <> player_id, socket) do
         Logger.info fn -> "#{game_id}: #{player_id} joined the game" end
 
-        game_id
-        |> String.to_atom
-        |> Agent.update(fn game ->
-            put_in(game.players[player_id].socket, socket)
-        end)
+        Player.connect(player_id, socket)
 
         :ok
     end
@@ -96,11 +86,7 @@ defmodule Prisoners.Game do
     def leave("" <> game_id, "" <> player_id) do
         Logger.info fn -> "#{game_id}: #{player_id} left the game" end
 
-        game_id
-        |> String.to_atom
-        |> Agent.update(fn game ->
-            put_in(game.players[player_id].socket, nil)
-        end)
+        Player.disconnect(player_id)
 
         :ok
     end
@@ -112,17 +98,13 @@ defmodule Prisoners.Game do
     def decide("" <> game_id, "" <> player_id, decision, "" <> opponent_id) when decision in @decisions do
         Logger.info fn -> "#{game_id}: #{player_id} decided to #{decision} with #{opponent_id}" end
 
-        game_id
-        |> String.to_atom
-        |> Agent.get_and_update(fn game ->
-            decisions = game.players[player_id].decisions
+        player = Player.get(player_id)
 
-            if decisions |> Map.has_key?(opponent_id) do
-                {:ok, put_in(game.players[player_id].decisions[opponent_id], String.to_atom(decision))}
-            else
-                {:err, game}
-            end
-        end)
+        if player.decisions |> Map.has_key?(opponent_id) do
+            Player.decide(player_id, opponent_id, decision)
+        else
+            :err
+        end
     end
     def decide(_, _, _, _), do: :err
 
@@ -130,9 +112,10 @@ defmodule Prisoners.Game do
     def say("" <> game_id, "" <> from_player_id, "" <> message) do
         Logger.info fn -> "#{game_id}: #{from_player_id} says '#{message}'" end
 
-        game_id
-        |> get_game
-        |> broadcast("update:message", parse_message(game_id, from_player_id, message))
+        message_data = parse_message(game_id, from_player_id, message)
+        save_message(game_id, message_data)
+
+        broadcast(game_id, "update:message", message_data)
 
         :ok
     end
@@ -141,11 +124,11 @@ defmodule Prisoners.Game do
         if has_player?(game_id, from_player_id) and has_player?(game_id, to_player_id) do
             Logger.info fn -> "#{game_id}: #{from_player_id} says '#{message}' to #{to_player_id}" end
 
-            players = get_game(game_id).players
             message_data = parse_message(game_id, from_player_id, message, to_player_id)
+            save_message(game_id, message_data)
 
             for player_id <- [from_player_id, to_player_id] do
-                Phoenix.Channel.push players[player_id].socket, "update:message", message_data
+                Player.send(player_id, "update:message", message_data)
             end
 
             :ok
@@ -155,30 +138,30 @@ defmodule Prisoners.Game do
     end
     def say(_, _, _, _) do :err end
 
-    def vote("" <> game_id, "" <> from_player_id, "" <> vote_for, flag) when is_boolean(flag) and vote_for in @votes do
-        Logger.info fn -> "#{game_id}: #{from_player_id} #{flag && "voted to #{vote_for}" || "canceled his #{vote_for} vote"}" end
+    def vote("" <> game_id, "" <> player_id, "" <> vote_for, flag) when is_boolean(flag) and vote_for in @votes do
+        Logger.info fn -> "#{game_id}: #{player_id} #{flag && "voted to #{vote_for}" || "canceled his #{vote_for} vote"}" end
 
         {vote_approved, pid} = game_id
         |> String.to_atom
-        |> Agent.get_and_update(fn game ->
-            game = put_in game.players[from_player_id].votes[vote_for], flag
+        |> Agent.get(fn game ->
+            Player.vote(player_id, vote_for, flag)
 
-            vote_approved = game.players |> Enum.all?(fn {_, player} -> player.votes[vote_for] end)
+            vote_approved = game.player_ids |> Player.get |> Enum.all?(fn player -> player.votes[vote_for] end)
 
-            game = case vote_approved do
-                true -> vote_reset(game, vote_for)
-                false -> game
+            if vote_approved do
+                vote_reset(game, vote_for)
             end
 
-            {{vote_approved, game.pid}, game}
+            {vote_approved, game.pid}
         end)
 
-        game = get_game(game_id)
+        game = get(game_id)
 
-        count = Enum.count(game.players, fn {_, player} ->
+        count = Enum.count(game.player_ids |> Player.get, fn player ->
             player.votes[vote_for]
         end)
-        broadcast(game, "update:vote", %{"vote" => vote_for, "count" => count})
+        
+        broadcast(game_id, "update:vote", %{"vote" => vote_for, "count" => count})
 
         if vote_approved do
             Logger.info fn -> "#{game_id}: Vote for game #{vote_for} was approved" end
@@ -194,14 +177,14 @@ defmodule Prisoners.Game do
     def get_info("" <> game_id, "" <> player_id) do
         Logger.debug fn -> "#{game_id}: Getting information for #{player_id}" end
 
-        player = get_player(game_id, player_id)
+        player = Player.get(player_id)
 
         %PlayerInfo{
             id: player_id,
             time: get_time(game_id),
             votes: player.votes,
-            players: game_id
-                |> get_opponents(player_id) |> Enum.reduce(%{}, fn opponent_id, acc ->
+            players: Player.get(player_id).opponent_ids
+                |> Enum.reduce(%{}, fn opponent_id, acc ->
                 put_in(acc[opponent_id], %{
                     id: opponent_id,
                     decision: player.decisions[opponent_id]
@@ -211,18 +194,14 @@ defmodule Prisoners.Game do
         }
     end
 
-    def get_game("" <> game_id) do
+    def get("" <> game_id), do: get(game_id, &(&1))
+    def get("" <> game_id, foo) do
         game_id
         |> String.to_atom
-        |> Agent.get(&(&1))
+        |> Agent.get(foo)
     end
 
-    def has_player?("" <> game_id, "" <> player_id), do: get_player(game_id, player_id) != nil
-    def get_player("" <> game_id, "" <> player_id), do: get_game(game_id).players[player_id]
-
-    def get_opponents(players, "" <> player_id) when is_list(players) do players |> Enum.filter(&(&1 != player_id)) end
-    def get_opponents(players, "" <> player_id) when is_map(players) do players |> Map.keys |> get_opponents(player_id) end
-    def get_opponents("" <> game_id, "" <> player_id) do get_game(game_id).players |> get_opponents(player_id) end
+    def has_player?("" <> game_id, "" <> player_id), do: player_id in get(game_id).player_ids
 
     def get_messages("" <> game_id, "" <> player_id) do
         Logger.debug fn -> "#{game_id}: Getting #{player_id} messages" end
@@ -245,9 +224,7 @@ defmodule Prisoners.Game do
     def can_join?("" <> game_id, "" <> player_id) do
         Logger.info fn -> "#{game_id}: Checking if #{player_id} can join" end
 
-        game_id
-        |> String.to_atom
-        |> Agent.get(fn %{players: players} -> Map.has_key?(players, player_id) end)
+        get(game_id, fn %{player_ids: player_ids} -> player_id in player_ids end)
     end
 
     ##
@@ -256,10 +233,10 @@ defmodule Prisoners.Game do
 
     defp calculate_points(a, b) when a in @decisions and b in @decisions do
         case {a, b} do
-            {:cooperate, :cooperate} -> 15
-            {:cooperate, :betray} -> -15
-            {:betray, :cooperate} -> 15
-            {:betray, :betray} -> 0
+            {"cooperate", "cooperate"} -> 15
+            {"cooperate", "betray"} -> -15
+            {"betray", "cooperate"} -> 15
+            {"betray", "betray"} -> 0
         end
     end
 
@@ -270,28 +247,28 @@ defmodule Prisoners.Game do
     defp parse_message("" <> game_id, "" <> player_id, "" <> message, opponent_id \\ nil) do
         Logger.info fn -> "#{game_id}: Parsing message from #{player_id} to #{opponent_id || "everyone"}" end
 
-        message_data = %Message{
+        %Message{
             from: player_id,
             to: opponent_id,
             text: message
         }
+    end
 
+    defp save_message("" <> game_id, message = %Message{}) do
         game_id
         |> String.to_atom
         |> Agent.update(fn game ->
-            update_in game.messages, &List.insert_at(&1, -1, message_data)
+            update_in game.messages, &List.insert_at(&1, -1, message)
         end)
-
-        message_data
     end
 
     defp result("" <> game_id) do
         Logger.info fn -> "#{game_id}: Calculating result" end
 
-        game = get_game(game_id)
+        game = get(game_id)
 
-        decisions = game.players
-        |> Map.values
+        decisions = game.player_ids
+        |> Player.get
         |> Enum.reduce([], fn %{decisions: decisions}, acc ->
             decisions
             |> Map.values
@@ -300,19 +277,18 @@ defmodule Prisoners.Game do
         |> Enum.dedup
 
         result = case decisions do
-            [:cooperate] -> give_everyone(game, 60)
-            [:betray] -> give_everyone(game, -60)
-            _ -> game.players
-            |> Map.keys
+            ["cooperate"] -> give_everyone(game, 60)
+            ["betray"] -> give_everyone(game, -60)
+            _ -> game.player_ids
             |> Enum.reduce(%{}, fn player_id, acc ->
-                result = game.players[player_id].decisions
+                res = Player.get(player_id).decisions
                 |> Enum.reduce(0, fn {opponent_id, player_decision}, points ->
-                    opponent_decision = game.players[opponent_id].decisions[player_id]
+                    opponent_decision = Player.get(opponent_id).decisions[player_id]
 
                     points + calculate_points(player_decision, opponent_decision)
                 end)
 
-                Map.put(acc, player_id, result)
+                Map.put(acc, player_id, res)
             end)
         end
 
@@ -332,36 +308,30 @@ defmodule Prisoners.Game do
             put_in game.start, game.start + duration
         end)
 
-        game_id
-        |> get_game
-        |> broadcast("update:extend", get_time(game_id))
+        broadcast(game_id, "update:extend", get_time(game_id))
 
         loop(game_id, duration)
     end
 
     defp give_everyone(game = %Game{}, points) when is_integer(points) do
-        game.players
-        |> Map.keys
+        game.player_ids
         |> Map.new(&({&1, points}))
     end
 
-    defp broadcast(game = %Game{}, "" <> message, payload) do
-        Logger.info fn -> "#{game.id}: Broadcasting #{message} => #{inspect(payload)}" end
+    defp broadcast("" <> game_id, "" <> channel, message) do
+        Logger.info fn -> "#{game_id}: Broadcasting #{channel} => #{inspect(message)}" end
 
-        game.players
-        |> Map.values
+        get(game_id).player_ids
         |> List.first
+        |> Player.get
         |> Map.get(:socket)
-        |> Phoenix.Channel.broadcast(message, payload)
+        |> Channel.broadcast(channel, message)
     end
 
-    defp vote_reset(game = %Game{}, vote) do
-        Logger.info fn -> "#{game.id}: Resetting vote #{vote}" end
+    defp vote_reset(game = %Game{}, "" <> vote_for) do
+        Logger.info fn -> "#{game.id}: Resetting vote #{vote_for}" end
 
-        players = for {player_id, player} <- game.players, into: %{} do
-            {player_id, put_in(player.votes[vote], false)}
-        end
-
-        %{game | players: players}
+        game.player_ids
+        |> Enum.each(&(Player.vote(&1, vote_for, false)))
     end
 end

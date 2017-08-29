@@ -1,27 +1,35 @@
 defmodule PrisonersWeb.GameChannelTest do
-  use PrisonersWeb.ChannelCase
+  use PrisonersWeb.ChannelCase, async: true
 
   alias PrisonersWeb.GameChannel
+  alias Prisoners.Game
 
-  setup do    
+  setup do
     game_id = UUID.uuid4()
-    {_pid, _ref} = Prisoners.Game.start game_id, ["a", "b", "c"]
-    {:ok, _, player_a} =
-      socket("a", %{})
-      |> subscribe_and_join(GameChannel, game_id, %{"token" => "a"})
-    {:ok, _, player_b} =
-      socket("b", %{})
-      |> subscribe_and_join(GameChannel, game_id, %{"token" => "b"})
-    {:ok, _, player_c} =
-      socket("c", %{})
-      |> subscribe_and_join(GameChannel, game_id, %{"token" => "c"})
 
-    {:ok, sockets: [player_a, player_b, player_c], game_id: game_id}
+    [player_a, player_b, player_c] = player_ids = for _ <- 0..2, do: UUID.uuid4()
+
+    {_pid, _ref} = Game.start game_id, player_ids
+    {:ok, _, socket_a} =
+      player_a
+      |> socket(%{})
+      |> subscribe_and_join(GameChannel, game_id, %{"token" => player_a})
+    {:ok, _, socket_b} =
+      player_b
+      |> socket(%{})
+      |> subscribe_and_join(GameChannel, game_id, %{"token" => player_b})
+    {:ok, _, socket_c} =
+      player_c
+      |> socket(%{})
+      |> subscribe_and_join(GameChannel, game_id, %{"token" => player_c})
+
+    {:ok, player_ids: [player_a, player_b, player_c], sockets: [socket_a, socket_b, socket_c], game_id: game_id}
   end
 
   test "reject join to non-registered opponents", %{game_id: game_id} do
-    res = socket("d", %{})
-      |> subscribe_and_join(GameChannel, game_id, %{"token" => "d"})
+    res = "idontexistLMAO"
+      |> socket(%{})
+      |> subscribe_and_join(GameChannel, game_id, %{"token" => "idontexistLMAO"})
 
     assert elem(res, 0) == :error, "Opponent joined with invalid token"
   end
@@ -72,34 +80,37 @@ defmodule PrisonersWeb.GameChannelTest do
     ref = push player, "action:decision", %{player: "ayy", decision: "cooperate"}
     assert_reply ref, :err, _
   end
-  
+
   test "reject decision on self", %{sockets: [player | _]} do
     ref = push player, "action:decision", %{player: player.assigns[:player_id], decision: "cooperate"}
     assert_reply ref, :err, _
   end
 
-  test "receive result on game end", %{sockets: sockets, game_id: game_id} do
+  test "receive result on game end", %{player_ids: [p_a, p_b, p_c], sockets: sockets, game_id: game_id} do
     players = Enum.zip(sockets, [
-      [["b", "cooperate"], ["c", "cooperate"]],
-      [["a", "cooperate"], ["c", "cooperate"]],
-      [["a", "cooperate"], ["b", "cooperate"]]
+      [[p_b, "cooperate"], [p_c, "cooperate"]],
+      [[p_a, "cooperate"], [p_c, "cooperate"]],
+      [[p_a, "cooperate"], [p_b, "cooperate"]]
     ])
+
     for {socket, decisions} <- players do
       for [opponent, decision] <- decisions do
         push socket, "action:decision", %{player: opponent, decision: decision}
       end
     end
-    Prisoners.Game.stop(game_id)
+
+    Game.stop(game_id)
+
     assert_broadcast "update:result", %{result: result}
     assert result |> Enum.all?(fn {_, pts} -> 60 == pts end), "Incorrect point amount returned: #{inspect(result)}"
   end
 
   test "reject malformed requests", %{sockets: [player | _]} do
-    ref = push player, "action:decision", %{decision: :cooperate}
+    ref = push player, "action:decision", %{decision: "cooperate"}
     assert_reply ref, :err, _
   end
 
-  test "on rejoin, receive game info", %{sockets: [player, opponent, _], game_id: game_id} do
+  test "on rejoin, receive game info", %{player_ids: [p_a | _], sockets: [player, opponent | _], game_id: game_id} do
     opponent_id = opponent.assigns[:player_id]
 
     push opponent, "action:message", %{text: "waddup"}
@@ -107,10 +118,12 @@ defmodule PrisonersWeb.GameChannelTest do
     assert_reply ref, :ok, _
 
     {:ok, reply, _} =
-      socket("a", %{})
-      |> subscribe_and_join(GameChannel, game_id, %{"token" => "a"})
-    assert reply.players[opponent_id].decision == :betray 
-    assert %Prisoners.Game.Message{text: "waddup", from: ^opponent_id, to: nil} = reply.messages |> List.first
+      p_a
+      |> socket(%{})
+      |> subscribe_and_join(GameChannel, game_id, %{"token" => p_a})
+
+    assert reply.players[opponent_id].decision == "betray"
+    assert %Game.Message{text: "waddup", from: ^opponent_id, to: nil} = reply.messages |> List.first
   end
 
   test "on vote, receive vote count", %{sockets: [player, _, _]} do
@@ -125,7 +138,7 @@ defmodule PrisonersWeb.GameChannelTest do
     for socket <- sockets do
       push socket, "action:vote", %{"vote" => "extend", "flag" => true}
     end
-    
+
     assert_broadcast "update:vote", %{"vote" => "extend", "count" => 0 }
   end
 end
