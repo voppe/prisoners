@@ -25,13 +25,13 @@ defmodule Prisoners.Player do
         |> String.to_existing_atom
         |> Agent.get(&(&1))
     end
-    
+
     def decide("" <> player_id, decide_for, decision) do
         player_id
         |> String.to_existing_atom
         |> Agent.update(&(put_in(&1.decisions[decide_for], decision)))
     end
-        
+
     def vote("" <> player_id, vote_for, vote) do
         player_id
         |> String.to_existing_atom

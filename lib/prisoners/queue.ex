@@ -3,27 +3,27 @@ defmodule Prisoners.Queue do
 
     def start_link do
         Agent.start_link(fn -> %{} end, name: __MODULE__)
-    end 
-    
+    end
+
     def pair do
         groups = __MODULE__
         |> Agent.get_and_update(fn queue ->
             groups = queue
             |> Map.keys
             |> Enum.shuffle
-            |> Enum.chunk(3) 
+            |> Enum.chunk(3)
 
             result = Enum.reduce(groups, [], fn group, acc ->
                 [group
                 |> Enum.reduce(%{}, fn player_id, acc ->
-                    Map.put(acc, player_id, queue[player_id]) 
+                    Map.put(acc, player_id, queue[player_id])
                 end) | acc]
             end)
-            
+
             state = Enum.reduce(groups, queue, fn player_ids, acc ->
                 Map.drop(acc, player_ids)
             end)
-            
+
             {result, state}
         end)
 

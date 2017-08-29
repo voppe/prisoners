@@ -21,12 +21,12 @@ defmodule Prisoners.Game do
 
     def run("" <> game_id, player_ids, duration \\ @duration) when is_list(player_ids) and is_integer(duration) do
         Logger.info fn -> "#{game_id}: Starting game with #{player_ids}" end
-        
+
         {:ok, ref} = Agent.start_link(fn ->
             for player_id <- player_ids do
                 Player.create(player_id, List.delete(player_ids, player_id))
             end
-            
+
             %Game{
                 id: game_id,
                 pid: self(),
@@ -145,7 +145,7 @@ defmodule Prisoners.Game do
 
             {vote_approved, game.pid}
         end)
-        
+
         if vote_approved do
             vote_reset(game_id, vote_for)
         end
@@ -155,7 +155,7 @@ defmodule Prisoners.Game do
         count = Enum.count(game.player_ids |> Player.get, fn player ->
             player.votes[vote_for]
         end)
-        
+
         broadcast(game_id, "update:vote", %{"vote" => vote_for, "count" => count})
 
         if vote_approved do
