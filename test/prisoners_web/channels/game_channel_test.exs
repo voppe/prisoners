@@ -9,7 +9,7 @@ defmodule PrisonersWeb.GameChannelTest do
 
     [player_a, player_b, player_c] = player_ids = for _ <- 0..2, do: UUID.uuid4()
 
-    {_pid, _ref} = Game.start game_id, player_ids
+    :ok = Game.start game_id, player_ids
     {:ok, _, socket_a} =
       player_a
       |> socket(%{})

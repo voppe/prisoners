@@ -19,42 +19,34 @@ defmodule Prisoners.Game do
     @votes ["extend", "end"]
     @duration 60_000
 
-    def run("" <> game_id, player_ids, duration \\ @duration) when is_list(player_ids) and is_integer(duration) do
+    def start("" <> game_id, player_ids, duration \\ @duration) when is_list(player_ids) and is_integer(duration) do
         Logger.info fn -> "#{game_id}: Starting game with #{player_ids}" end
 
-        {:ok, ref} = Agent.start_link(fn ->
-            for player_id <- player_ids do
-                Player.create(player_id, List.delete(player_ids, player_id))
-            end
+        spawn(fn ->
+            {:ok, ref} = Agent.start_link(fn ->
+                for player_id <- player_ids do
+                    Player.create(player_id, List.delete(player_ids, player_id))
+                end
 
-            %Game{
-                id: game_id,
-                pid: self(),
-                duration: duration,
-                start: :os.system_time(:milli_seconds),
-                player_ids: player_ids,
-                messages: []
-            }
-        end, name: String.to_atom(game_id))
+                %Game{
+                    id: game_id,
+                    pid: self(),
+                    duration: duration,
+                    start: :os.system_time(:milli_seconds),
+                    player_ids: player_ids,
+                    messages: []
+                }
+            end, name: String.to_atom(game_id))
 
-        Logger.info fn -> "#{game_id}: Started game with #{player_ids}" end
-        Logger.debug fn -> "#{game_id}: Started process #{inspect(ref)}" end
+            Logger.info fn -> "#{game_id}: Started game with #{player_ids}" end
+            Logger.debug fn -> "#{game_id}: Started process #{inspect(ref)}" end
 
-        loop(game_id, duration)
+            loop(game_id, duration)
 
-        Logger.info fn -> "#{game_id}: Ended game" end
-    end
+            Logger.info fn -> "#{game_id}: Ended game" end
+        end)
 
-    defp loop("" <> game_id, duration) when is_integer(duration) do
-        receive do
-            :game_extend -> extend(game_id)
-        after
-            duration -> stop(game_id)
-        end
-    end
-
-    def start("" <> game_id, player_ids) when is_list(player_ids) do
-        spawn_monitor(Prisoners.Game, :run, [game_id, player_ids])
+        :ok
     end
 
     def stop("" <> game_id) do
@@ -67,6 +59,21 @@ defmodule Prisoners.Game do
         |> Agent.stop
 
         :ok
+    end
+
+    def get("" <> game_id), do: get(game_id, &(&1))
+    def get("" <> game_id, foo) do
+        game_id
+        |> String.to_existing_atom
+        |> Agent.get(foo)
+    end
+
+    defp loop("" <> game_id, duration) when is_integer(duration) do
+        receive do
+            :game_extend -> extend(game_id)
+        after
+            duration -> stop(game_id)
+        end
     end
 
     ##
@@ -187,13 +194,6 @@ defmodule Prisoners.Game do
             end),
             messages: get_messages(game_id, player_id)
         }
-    end
-
-    def get("" <> game_id), do: get(game_id, &(&1))
-    def get("" <> game_id, foo) do
-        game_id
-        |> String.to_existing_atom
-        |> Agent.get(foo)
     end
 
     def has_player?("" <> game_id, "" <> player_id), do: player_id in get(game_id).player_ids

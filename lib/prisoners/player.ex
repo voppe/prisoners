@@ -16,6 +16,8 @@ defmodule Prisoners.Player do
             }
         end, name: player_id
         |> String.to_atom)
+
+        :ok
     end
 
     def get([player_id | player_ids]), do: [get(player_id) | get(player_ids)]

@@ -23,7 +23,7 @@ defmodule PrisonersWeb.QueueChannel do
         for group <- groups do
             game_id = UUID.uuid4()
 
-            {_, _} = Prisoners.Game.start("game:" <> game_id, Map.keys(group))
+            :ok = Prisoners.Game.start("game:" <> game_id, Map.keys(group))
 
             Logger.info("Game #{game_id} started with players #{Map.keys(group)}")
 
