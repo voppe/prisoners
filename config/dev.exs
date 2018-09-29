@@ -11,8 +11,14 @@ config :prisoners, PrisonersWeb.Endpoint,
   debug_errors: true,
   code_reloader: true,
   check_origin: false,
-  watchers: [node: ["node_modules/brunch/bin/brunch", "watch", "--stdin",
-                    cd: Path.expand("../assets", __DIR__)]]
+  watchers: [
+    node: [
+      "node_modules/brunch/bin/brunch",
+      "watch",
+      "--stdin",
+      cd: Path.expand("../assets", __DIR__)
+    ]
+  ]
 
 # ## SSL Support
 #
@@ -50,9 +56,9 @@ config :phoenix, :stacktrace_depth, 20
 
 # Configure your database
 config :prisoners, Prisoners.Repo,
-  adapter: Ecto.Adapters.Postgres,
-  username: "postgres",
-  password: "postgres",
-  database: "prisoners_dev",
+  adapter: Ecto.Adapters.MySQL,
+  username: "root",
+  password: "root",
+  database: "ouija_dev",
   hostname: "localhost",
   pool_size: 10
