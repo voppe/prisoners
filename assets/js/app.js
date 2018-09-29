@@ -11,22 +11,22 @@
 //
 // If you no longer want to use a dependency, remember
 // to also remove its path from "config.paths.watched".
-import "phoenix_html"
+import "phoenix_html";
 
 // Import local files
 //
 // Local files can be imported directly using relative
 // paths "./socket" or full ones "web/static/js/socket".
 
-import Vue from 'vue'
-import VueRouter from 'vue-router'
-import App from './components/App'
-import router from './router'
+import Vue from "vue";
+import VueRouter from "vue-router";
+import App from "./components/App";
+import router from "./router";
 
-Vue.use(VueRouter)
+Vue.use(VueRouter);
 
 const app = new Vue({
-    el: "#app",
-    render: h => h(App),
-    router
-})
+  el: "#app",
+  render: h => h(App),
+  router
+});
