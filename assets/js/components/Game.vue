@@ -12,7 +12,7 @@
             <li v-for="message in messages">
                 <span v-if="message.from === player.id">You</span>
                 <span v-else>{{message.from}}</span>
-                <span v-if="message.to !== null">whispered to 
+                <span v-if="message.to !== null">whispered to
                 <span v-if="message.to !== player.id">{{message.to}}</span>
                 <span v-else>you</span>
                 </span>
@@ -45,133 +45,137 @@
 </template>
 
 <script>
-    import socket from '../socket'
-    import router from '../router'
+import socket from "../socket";
+import router from "../router";
 
-    import VoteCount from './VoteCount.vue'
+import VoteCount from "./VoteCount.vue";
 
-    export default {
-        components: {
-            VoteCount
-        },
-        name: "game",
-        mounted() {
-            this.gameid = this.$route.params.id
+export default {
+  components: {
+    VoteCount
+  },
+  name: "game",
+  mounted() {
+    this.gameid = this.$route.params.id;
 
-            let token = sessionStorage.getItem(this.gameid)
+    let token = sessionStorage.getItem(this.gameid);
 
-            console.log("Joining game", this.gameid, "with token", token.substr(0, 9)+"*");
+    console.log(
+      "Joining game",
+      this.gameid,
+      "with token",
+      token.substr(0, 9) + "*"
+    );
 
-            this.channel = socket.channel(`game:${this.gameid}`, { token })
+    this.channel = socket.channel(`game:${this.gameid}`, { token });
 
-            this.channel
-                .join()
-                .receive("ok", resp => {
-                    console.log("Connected to", resp.id)
+    this.channel
+      .join()
+      .receive("ok", resp => {
+        console.log("Connected to", resp.id);
 
-                    this.joined = true
-                    this.players = resp.players
-                    this.time = resp.time
-                    this.player.id = resp.id
-                    this.votes = resp.votes
-                    this.messages = resp.messages
+        this.joined = true;
+        this.players = resp.players;
+        this.time = resp.time;
+        this.player.id = resp.id;
+        this.votes = resp.votes;
+        this.messages = resp.messages;
 
-                    if(!this._countdown) {
-                        this.startCountdown()
-                    }
-                })
-                .receive("error", resp => {
-                    console.error("Could not join game:", resp.reason)
-                    router.replace('/')
-                })
-
-            this.channel
-                .on("update:message", message => {
-                    console.log("Received", message)
-
-                    this.messages.push(message)
-                })
-
-            this.channel
-                .on("update:result", message => {
-                    console.log("Result", message)
-                    this.joined = false
-
-                    this.onGameEnd(message)
-                })
-
-            this.channel
-                .on("update:vote", message => {
-                    console.log("Received vote", message)
-                    this.votes[message.vote] = message.count;
-                })
-
-            this.channel
-                .on("update:extend", time => {
-                    console.log("Received extend", time)
-                    this.extend = false
-                    this.time = time
-                })
-        },
-        data() {
-            return {
-                gameid: null,
-                joined: false,
-                message: {
-                    text: "",
-                    to: ""
-                },
-                channel: null,
-                player: {
-                    id: null
-                },
-                players: [],
-                messages: [],
-                extend: false,
-                time: {
-                    current: 0,
-                    finish: 0
-                },
-                votes: {
-                    extend: 0
-                }
-            }
-        },
-        methods: {
-            decide: function (player, decision) {
-                this.players[player].decision = decision
-
-                this.channel.push("action:decision", {
-                    decision,
-                    player
-                })
-            },
-            send: function () {
-                if (!this.isValidMessage()) return;
-
-                this.channel.push("action:message", this.message)
-                this.message.text = ""
-            },
-            vote: function (vote, flag) {
-                console.log("Voting for ", vote, ":", flag)
-
-                this[vote] = !this[vote] === true
-                this.channel.push("action:vote", {
-                    vote,
-                    flag
-                })
-            },
-            isValidMessage: function () {
-                return this.message.text.length > 0;
-            },
-            startCountdown: function () {
-                var lastTime = new Date().getTime()
-                this._countdown = window.setInterval(() => {
-                    var currentTime = new Date().getTime()
-                    this.time.current += currentTime - lastTime
-                    lastTime = currentTime
-                }, 100);
-            }
+        if (!this._countdown) {
+          this.startCountdown();
         }
+      })
+      .receive("error", resp => {
+        console.error("Could not join game:", resp.reason);
+        router.replace("/");
+      });
+
+    this.channel.on("update:message", message => {
+      console.log("Received", message);
+
+      this.messages.push(message);
+    });
+
+    this.channel.on("update:result", message => {
+      console.log("Result", message);
+      this.joined = false;
+
+      this.onGameEnd(message);
+    });
+
+    this.channel.on("update:vote", message => {
+      console.log("Received vote", message);
+      this.votes[message.vote] = message.count;
+    });
+
+    this.channel.on("update:extend", time => {
+      console.log("Received extend", time);
+      this.extend = false;
+      this.time = time;
+    });
+  },
+  data() {
+    return {
+      gameid: null,
+      joined: false,
+      message: {
+        text: "",
+        to: ""
+      },
+      channel: null,
+      player: {
+        id: null
+      },
+      players: [],
+      messages: [],
+      extend: false,
+      time: {
+        current: 0,
+        finish: 0
+      },
+      votes: {
+        extend: 0
+      }
+    };
+  },
+  methods: {
+    decide: function(player, decision) {
+      this.players[player].decision = decision;
+
+      this.channel.push("action:decision", {
+        decision,
+        player
+      });
+    },
+    send: function() {
+      if (!this.isValidMessage()) return;
+
+      this.channel.push("action:message", this.message);
+      this.message.text = "";
+    },
+    vote: function(vote, flag) {
+      console.log("Voting for ", vote, ":", flag);
+
+      this[vote] = !this[vote] === true;
+      this.channel.push("action:vote", {
+        vote,
+        flag
+      });
+    },
+    isValidMessage: function() {
+      return this.message.text.length > 0;
+    },
+    startCountdown: function() {
+      var lastTime = new Date().getTime();
+      this._countdown = window.setInterval(() => {
+        var currentTime = new Date().getTime();
+        this.time.current += currentTime - lastTime;
+        lastTime = currentTime;
+      }, 100);
+    },
+    onGameEnd: function() {
+      alert("Yay");
     }
+  }
+};
 </script>

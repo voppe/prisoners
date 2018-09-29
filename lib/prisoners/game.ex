@@ -70,7 +70,7 @@ defmodule Prisoners.Game do
 
     defp loop("" <> game_id, duration) when is_integer(duration) do
         receive do
-            :game_extend -> extend(game_id)
+            :extend -> extend(game_id)
         after
             duration -> stop(game_id)
         end

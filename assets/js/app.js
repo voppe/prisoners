@@ -17,7 +17,6 @@ import "phoenix_html";
 //
 // Local files can be imported directly using relative
 // paths "./socket" or full ones "web/static/js/socket".
-
 import Vue from "vue";
 import VueRouter from "vue-router";
 import App from "./components/App";
