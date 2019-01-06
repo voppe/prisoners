@@ -1,0 +1,25 @@
+version: '2'
+services:
+  db:
+    image: postgres
+    networks:
+      - all
+  redis:
+    image: redis
+    networks:
+      - all
+  web:
+    build: .
+    command: mix phoenix.server
+    volumes:
+      - .:/app
+    ports:
+      - "4000:4000"
+    depends_on:
+      - db
+      - redis
+    networks:
+      - all
+networks:
+  all:
+    driver: "bridge"
